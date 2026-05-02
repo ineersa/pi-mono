@@ -456,7 +456,10 @@ async function* mapCodexEvents(events: AsyncIterable<Record<string, unknown>>): 
 				? { ...response, status: normalizeCodexStatus(response.status) }
 				: response;
 			yield { ...event, type: "response.completed", response: normalizedResponse } as ResponseStreamEvent;
-			return;
+			// Do NOT return — continue yielding events. Late response.output_item.done
+			// events (e.g., function_call items) must still reach processResponsesStream
+			// so tool calls are finalized before stopReason is derived.
+			continue;
 		}
 
 		yield event as unknown as ResponseStreamEvent;
