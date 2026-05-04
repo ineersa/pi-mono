@@ -71,6 +71,27 @@ npm run check        # Lint, format, and type check
 ./pi-test.sh         # Run pi from sources (can be run from any directory)
 ```
 
+### Install pi globally from this checkout
+
+```bash
+npm install
+npm run build
+npm link --workspace @mariozechner/pi-coding-agent
+```
+
+After linking, the global `pi` command points at this repo. Rebuild after local changes:
+
+```bash
+npm run build
+```
+
+Unlink the checkout and return to the published package with:
+
+```bash
+npm unlink -g @mariozechner/pi-coding-agent
+npm install -g @mariozechner/pi-coding-agent
+```
+
 > **Note:** `npm run check` requires `npm run build` to be run first. The web-ui package uses `tsc` which needs compiled `.d.ts` files from dependencies.
 
 ## License
