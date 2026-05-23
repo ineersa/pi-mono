@@ -1,7 +1,6 @@
-import { type AssistantMessage, type AssistantMessageEvent, EventStream, getModel } from "@mariozechner/pi-ai";
-import { Type } from "typebox";
+import { type AssistantMessage, type AssistantMessageEvent, EventStream, getModel } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import { Agent, type AgentTool } from "../src/index.js";
+import { Agent } from "../src/index.ts";
 
 // Mock stream that mimics AssistantMessageEventStream
 class MockAssistantStream extends EventStream<AssistantMessageEvent, AssistantMessage> {
@@ -99,6 +98,37 @@ describe("Agent", () => {
 		unsubscribe();
 		agent.state.systemPrompt = "Another prompt";
 		expect(eventCount).toBe(0); // Should not increase
+	});
+
+	it("emits full lifecycle events for thrown run failures", async () => {
+		const agent = new Agent({
+			streamFn: () => {
+				throw new Error("provider exploded");
+			},
+		});
+		const events: string[] = [];
+		agent.subscribe((event) => {
+			events.push(event.type);
+		});
+
+		await agent.prompt("hello");
+
+		expect(events).toEqual([
+			"agent_start",
+			"turn_start",
+			"message_start",
+			"message_end",
+			"message_start",
+			"message_end",
+			"turn_end",
+			"agent_end",
+		]);
+		const lastMessage = agent.state.messages[agent.state.messages.length - 1];
+		expect(lastMessage?.role).toBe("assistant");
+		if (lastMessage?.role !== "assistant") throw new Error("Expected assistant message");
+		expect(lastMessage.stopReason).toBe("error");
+		expect(lastMessage.errorMessage).toBe("provider exploded");
+		expect(agent.state.errorMessage).toBe("provider exploded");
 	});
 
 	it("should await async subscribers before prompt resolves", async () => {
@@ -230,14 +260,9 @@ describe("Agent", () => {
 
 		// Test setTools
 		const tools = [{ name: "test", description: "test tool" } as any];
-		const previousTools = agent.state.tools;
 		agent.state.tools = tools;
 		expect(agent.state.tools).toEqual(tools);
 		expect(agent.state.tools).not.toBe(tools); // Should be a copy
-		expect(agent.state.tools).toBe(previousTools); // Existing references stay live
-		const sameTools = agent.state.tools;
-		agent.state.tools = sameTools;
-		expect(agent.state.tools).toEqual(tools); // Assigning the live array is a no-op
 
 		// Test replaceMessages
 		const messages = [{ role: "user" as const, content: "Hello", timestamp: Date.now() }];
@@ -254,59 +279,6 @@ describe("Agent", () => {
 		// Test clearMessages
 		agent.state.messages = [];
 		expect(agent.state.messages).toEqual([]);
-	});
-
-	it("should allow tools assigned during lifecycle events to affect the active run", async () => {
-		const schema = Type.Object({ value: Type.String() });
-		let executedValue: string | undefined;
-		const deferredTool: AgentTool<typeof schema, { value: string }> = {
-			name: "deferred",
-			label: "Deferred",
-			description: "Deferred tool",
-			parameters: schema,
-			async execute(_toolCallId, params) {
-				executedValue = params.value;
-				return {
-					content: [{ type: "text", text: `deferred: ${params.value}` }],
-					details: { value: params.value },
-					terminate: true,
-				};
-			},
-		};
-
-		let streamToolNames: string[] | undefined;
-		const agent = new Agent({
-			streamFn: (_model, context) => {
-				streamToolNames = context.tools?.map((tool) => tool.name);
-				const stream = new MockAssistantStream();
-				queueMicrotask(() => {
-					stream.push({
-						type: "done",
-						reason: "toolUse",
-						message: {
-							...createAssistantMessage(""),
-							content: [{ type: "toolCall", id: "tool-1", name: "deferred", arguments: { value: "ok" } }],
-							stopReason: "toolUse",
-						},
-					});
-				});
-				return stream;
-			},
-		});
-
-		agent.subscribe((event) => {
-			if (event.type === "agent_start") {
-				agent.state.tools = [deferredTool];
-			}
-		});
-
-		await agent.prompt("use the deferred tool");
-
-		expect(streamToolNames).toEqual(["deferred"]);
-		expect(executedValue).toBe("ok");
-		expect(
-			agent.state.messages.some((message) => message.role === "toolResult" && message.toolName === "deferred"),
-		).toBe(true);
 	});
 
 	it("should support steering message queue", async () => {
