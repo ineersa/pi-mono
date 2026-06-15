@@ -15,7 +15,7 @@ export { Editor, type EditorOptions, type EditorTheme } from "./components/edito
 export { Image, type ImageOptions, type ImageTheme } from "./components/image.ts";
 export { Input } from "./components/input.ts";
 export { Loader, type LoaderIndicatorOptions } from "./components/loader.ts";
-export { type DefaultTextStyle, Markdown, type MarkdownTheme } from "./components/markdown.ts";
+export { type DefaultTextStyle, Markdown, type MarkdownOptions, type MarkdownTheme } from "./components/markdown.ts";
 export {
 	type SelectItem,
 	SelectList,
@@ -61,6 +61,8 @@ export {
 export { StdinBuffer, type StdinBufferEventMap, type StdinBufferOptions } from "./stdin-buffer.ts";
 // Terminal interface and implementations
 export { ProcessTerminal, type Terminal } from "./terminal.ts";
+// Terminal colors
+export { parseOsc11BackgroundColor, type RgbColor } from "./terminal-colors.ts";
 // Terminal image support
 export {
 	allocateImageId,
@@ -99,6 +101,7 @@ export {
 	type OverlayHandle,
 	type OverlayMargin,
 	type OverlayOptions,
+	type OverlayUnfocusOptions,
 	type SizeValue,
 	TUI,
 } from "./tui.ts";

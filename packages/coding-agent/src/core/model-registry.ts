@@ -25,11 +25,15 @@ import { type Static, Type } from "typebox";
 import { Compile } from "typebox/compile";
 import type { TLocalizedValidationError } from "typebox/error";
 import { getAgentDir } from "../config.ts";
+import { stripJsonComments } from "../utils/json.ts";
 import { normalizePath } from "../utils/paths.ts";
 import type { AuthStatus, AuthStorage } from "./auth-storage.ts";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "./provider-display-names.ts";
 import {
 	clearConfigValueCache,
+	getConfigValueEnvVarNames,
+	isCommandConfigValue,
+	isConfigValueConfigured,
 	resolveConfigValueOrThrow,
 	resolveConfigValueUncached,
 	resolveHeadersOrThrow,
@@ -121,6 +125,7 @@ const OpenAICompletionsCompatSchema = Type.Object({
 });
 
 const OpenAIResponsesCompatSchema = Type.Object({
+	supportsDeveloperRole: Type.Optional(Type.Boolean()),
 	sendSessionIdHeader: Type.Optional(Type.Boolean()),
 	supportsLongCacheRetention: Type.Optional(Type.Boolean()),
 });
@@ -216,13 +221,6 @@ function formatValidationPath(error: TLocalizedValidationError): string {
 	}
 	const path = error.instancePath.replace(/^\//, "").replace(/\//g, ".");
 	return path || "root";
-}
-
-/** Strip `//` line comments and trailing commas from JSON, leaving string literals untouched. */
-function stripJsonComments(input: string): string {
-	return input
-		.replace(/"(?:\\.|[^"\\])*"|\/\/[^\n]*/g, (m) => (m[0] === '"' ? m : ""))
-		.replace(/"(?:\\.|[^"\\])*"|,(\s*[}\]])/g, (m, tail) => tail ?? (m[0] === '"' ? m : ""));
 }
 
 /** Provider override config (baseUrl, compat) without request auth/headers */
@@ -641,9 +639,10 @@ export class ModelRegistry {
 	 * Get API key for a model.
 	 */
 	hasConfiguredAuth(model: Model<Api>): boolean {
+		const providerApiKey = this.providerRequestConfigs.get(model.provider)?.apiKey;
 		return (
 			this.authStorage.hasAuth(model.provider) ||
-			this.providerRequestConfigs.get(model.provider)?.apiKey !== undefined
+			(providerApiKey !== undefined && isConfigValueConfigured(providerApiKey))
 		);
 	}
 
@@ -738,12 +737,15 @@ export class ModelRegistry {
 			return authStatus;
 		}
 
-		if (providerApiKey.startsWith("!")) {
+		if (isCommandConfigValue(providerApiKey)) {
 			return { configured: true, source: "models_json_command" };
 		}
 
-		if (process.env[providerApiKey]) {
-			return { configured: true, source: "environment", label: providerApiKey };
+		const envVarNames = getConfigValueEnvVarNames(providerApiKey);
+		if (envVarNames.length > 0) {
+			return isConfigValueConfigured(providerApiKey)
+				? { configured: true, source: "environment", label: envVarNames.join(", ") }
+				: { configured: false };
 		}
 
 		return { configured: true, source: "models_json_key" };
